@@ -7,8 +7,8 @@ from requests.exceptions import RequestException, HTTPError
 
 import config
 from data_loader import create_json
-from evaluator_content_handler import *
-import evaluator_metrics_calculator
+from evaluator_content_handler import negotiate_formats, get_predictions, deserialize_response
+from evaluator_metrics_calculator import calculate_and_save_metrics
 
 def run_evaluator(predictor_ip, predictor_port, output_dir):
     """
@@ -76,7 +76,9 @@ def run_evaluator(predictor_ip, predictor_port, output_dir):
         
     # Check sequence counts before saving
     for i, task in enumerate(response_payload.get("prediction_tasks", []), start=1):
-        preds = task.get("predictions", [])
+        preds = task.get("predictions", {})
+        if "error" in preds:
+            continue
         if len(preds) != total_sequences:
             print(f"Warning: Task {i} ('{task.get('name')}') has {len(preds)} predictions, but {total_sequences} sequences were sent to the Predictor.")
     
@@ -93,16 +95,17 @@ def run_evaluator(predictor_ip, predictor_port, output_dir):
         all_lengths_match = True
         #Loop through and check all the prediction tasks
         for i, task in enumerate(response_payload.get("prediction_tasks", []), start=1):
-            preds = task.get("predictions", [])
+            preds = task.get("predictions", {})
             #If there is an error key in one of the predictions don't check length of predictions
             if "error" in preds:
-                all_lengths_match = True
+                print(f"Task {i} ('{task.get('name')}') returned an error -- skipping length check.")
+                continue
             #Otherwise length of predictions needs to == the # of sequences
             if len(preds) != total_sequences:
                 print(f"Warning: Task {i} ('{task.get('name')}') has {len(preds)} predictions, but {total_sequences} sequences were sent to the Predictor.")
                 all_lengths_match = False
         if all_lengths_match:    
-            evaluator_metrics_calculator.calculate_and_save_metrics(saved_predictions_path, output_dir)
+            calculate_and_save_metrics(saved_predictions_path, output_dir)
         else:
             print("Skipping metric calculation because not all sequences got predictions.")
     else:

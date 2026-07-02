@@ -1,14 +1,23 @@
-'''Calculate and save the final evaluation metrics.'''
+'''Calculate and save the final evaluation metrics.
 
-# NOTE: Every evaluator will do this slightly differently depending on how the data is presented
+This module computes Pearson r between the Predictor's expression predictions and
+the measured log2(RNA/DNA) values from the Gosai 2024 synthetic MPRA dataset, for each
+of the three cell types (K562, HepG2, SK-N-SH).
+
+Cell-type specificity is NOT computed for Gosai — the dataset's measurements are not
+made across all three cell types in a way that supports paired-difference correlation.
+
+NOTE: Every evaluator will do this slightly differently depending on how the data is presented.
+'''
 
 import os
 import sys
 import json
 import pandas as pd
 import numpy as np
-from datetime import datetime, timezone
 from scipy.stats import pearsonr
+from datetime import datetime, timezone
+
 from config import EVALUATOR_NAME, EVALUATOR_INPUT_PATH
 
 def _calculate_task_correlation(
@@ -22,7 +31,7 @@ def _calculate_task_correlation(
     
     """
     Calculates Pearson r and extracts metadata for single prediction task,
-    usign pre-loaded measured_df and a single task data dictionary.
+    using pre-loaded measured_df and a single task data dictionary.
     
     Args:
         measured_df (pd.DataFrame): The dataframe of measured values loaded once by the caller (Evaluator __main__ block).
@@ -67,6 +76,7 @@ def _calculate_task_correlation(
         'pearson_r': pearson_r_value
         }
         return correlation_details
+    
     # --- Data Validation and processing ---
     print("--- Validating data ---")
     if not isinstance(predictions_dict, dict):
@@ -108,7 +118,6 @@ def _calculate_task_correlation(
             }
             return correlation_details
     
-    
         # Now select only the necessary columns of measured_df
         columns_to_keep = [seq_id_column, measured_value_column]
         if (chromosome_column and chromosomes_to_filter and (chromosome_column in measured_df)):
@@ -116,7 +125,10 @@ def _calculate_task_correlation(
                 columns_to_keep.append(chromosome_column)
                 
         measured_df_subset = measured_df[columns_to_keep].copy()
-        merged_df = pd.merge(measured_df_subset, predictions_df, on=seq_id_column, how="left")
+        merged_df = pd.merge(
+            measured_df_subset, predictions_df,
+            on=seq_id_column, how="inner"
+        )
 
         # Filter by chromosome (if needed)
         if (chromosomes_to_filter and chromosome_column and (chromosome_column in merged_df.columns)):
@@ -130,19 +142,17 @@ def _calculate_task_correlation(
             filtered_df = merged_df # No chromosome filter
         
         # Columns for correlation calculation
-        
-        correlation_columns = [measured_value_column]
-        
         # Drop any rows that have NaNs for either column
-        print("Original size of the measurment file is:")
+        correlation_columns = [measured_value_column]
+        print("Original size of the measurement file is:")
         print(filtered_df.shape)
         na_rows = filtered_df[filtered_df[correlation_columns].isna().any(axis=1)]
         if not na_rows.empty:
             print("Rows with NaN values in any of measured value column (will be dropped):")
             print(na_rows)
-    
+            
         final_df = filtered_df.dropna(subset=correlation_columns)
-        print("Size of data that will be used to calculate peasron r")
+        print("Size of data after dropping rows with NaN measured values")
         print(final_df.shape)
 
         # Sanitize the final_df in case values are non-numeric
@@ -150,20 +160,33 @@ def _calculate_task_correlation(
             print("Sanitizing final_df in case values are non-numeric for correlation...")
             final_df.loc[:, 'Predicted_Value'] = pd.to_numeric(final_df['Predicted_Value'], errors='coerce')
             final_df.loc[:, measured_value_column] = pd.to_numeric(final_df[measured_value_column], errors='coerce')
-
-            final_df = final_df.dropna(subset=correlation_columns) # Drop NaNs after converting to numeric
+            
+            # Drop rows that became NaN after numeric coercion, with a count for visibility
+            rows_before = len(final_df)
+            final_df = final_df.dropna(subset=['Predicted_Value', measured_value_column])
+            rows_dropped = rows_before - len(final_df)
+            if rows_dropped > 0:
+                print(f"Warning: Dropped {rows_dropped} rows with non-numeric values after coercion.")
+            print("Size of data that will be used to calculate Pearson r")
             print(final_df.shape)
-            # Calculate pearson r
-            try:
-                r, _ = pearsonr(final_df['Predicted_Value'], final_df[measured_value_column])
-                print(f"Calculated Pearson r for {task_name}: {r}") 
-                if np.isnan(r):
-                    print(f"WARNING: Pearson r is NaN for task '{task_name}'")
-                    pearson_r_value = None
-                else:
-                    pearson_r_value = float(r)
-            except ValueError as e:
-                print(f"ValueError during Pearson correlation calculation for task: '{task_name}': {e}")
+            
+            # Check for 0 variance in either column (all values identical)
+            std_predicted = final_df['Predicted_Value'].std()
+            std_measured = final_df[measured_value_column].std()
+
+            if std_predicted == 0 or std_measured == 0:
+                print(f"WARNING: Zero variance detected for task '{task_name}'. Setting Pearson r to 0 to reflect no correlation.")
+                pearson_r_value = 0.0
+            
+            else:
+                # Calculate pearson r
+                try:
+                    r, _ = pearsonr(final_df['Predicted_Value'], final_df[measured_value_column])
+                    pearson_r_value = 0.0 if np.isnan(r) else float(r)
+                    print(f"Calculated Pearson r for {task_name}: {pearson_r_value}")
+                except Exception as e:
+                    print(f"Error during Pearson correlation calculation for task '{task_name}': {e}")
+            
         else:
             print(f"DataFrame is empty after numeric conversion and NaN drop for task: '{task_name}'")
             
@@ -174,27 +197,6 @@ def _calculate_task_correlation(
         'pearson_r': pearson_r_value
     }
     return correlation_details
-
-
-def _save_df_to_csv(df, filepath):
-    """
-    Appends a DataFrame to a CSV file, adding a header if the file is new.
-    """
-    if df.empty:
-        print(f"No metrics to save for {os.path.basename(filepath)}. Skipping.")
-        return
-    
-    try:
-        file_exists = os.path.isfile(filepath)
-        df.to_csv(filepath, mode='a', sep='\t', header=(not file_exists), index=False)
-        print(f"DEBUG: Metrics file '{filepath}' exists: {file_exists}")
-        if file_exists:
-            print(f"Appended metrics to {filepath}")
-        else:
-            print(f"Created new metrics file {filepath}")
-    except IOError as e:
-        print(f"\nError: Could not save metrics to {filepath}. {e}", file=sys.stderr)
-
 
 def calculate_and_save_metrics(saved_predictions_path, output_dir):
     """
@@ -214,11 +216,12 @@ def calculate_and_save_metrics(saved_predictions_path, output_dir):
         "SK-N-SH (neuroblastoma)": "SKNSH_l2fc"
     }
     # Define output paths
-    correlation_summary_filename = f"correlation_summary_{EVALUATOR_NAME}.csv"
-    correlation_summary_filepath = os.path.join(output_dir, correlation_summary_filename)
+    evaluation_metrics_filename = f"evaluation_summary_{EVALUATOR_NAME}.csv"
+    evaluation_metrics_filepath = os.path.join(output_dir, evaluation_metrics_filename)
     
     # Initialize an empty list to get summary for all tasks
     all_task_correlation_results = []
+    
     try:
         try:
             # Load measured data file and predictions file ONCE (not with every function call).
@@ -229,7 +232,6 @@ def calculate_and_save_metrics(saved_predictions_path, output_dir):
             measured_df = pd.read_csv(MEASURED_DATA_PATH, sep='\t', header=0)
             print(measured_df)
             
-            # ADD THIS FILTERING - Match the filtering done in data_loader.py create_json()
             print("\nFiltering to synthetic sequences only (matching sequences sent to Predictor)...")
             print(f"Original measured_df shape: {measured_df.shape}")
             measured_df = measured_df[measured_df['origin'].isin(["Simulated_Annealing", "FastSeqProp", "AdaLead"])]
@@ -241,11 +243,12 @@ def calculate_and_save_metrics(saved_predictions_path, output_dir):
                 predictions_file_content = json.load(f)
             
             # Extract Predictor Name
-            predictor_name_base = predictions_file_content.get("predictor_name", None) # Resort to None if predictor name is not available
+            predictor_name_base = predictions_file_content.get("predictor_name", "UnknownPredictor")
             predictor_name = predictor_name_base.replace(" ", "_").replace("/", "_")
+        
         except Exception as e:
-            print(f"Error loading data files: {e}")
-            sys.exit(1) # Exit if essential data can't be loaded
+            print(f"Error loading data files: {e}", file=sys.stderr)
+            raise
             
         try:
             if (
@@ -258,7 +261,7 @@ def calculate_and_save_metrics(saved_predictions_path, output_dir):
                 print("WARNING: 'prediction_tasks' key missing, empty, or one of the tasks has empty predictions.")
             else:
                 # Loop through each prediction_task from Predictor
-                # Calculate the correlation for each task seperately
+                # Calculate the correlation for each task separately
                 for task_index, single_task_data_dict in enumerate(predictions_file_content["prediction_tasks"]):
                     if not isinstance(single_task_data_dict, dict):
                         print(f"WARNING: Task item at index {task_index} is not a dictionary. Skipping!")
@@ -270,7 +273,7 @@ def calculate_and_save_metrics(saved_predictions_path, output_dir):
                     # We also want to extract the cell_type_requested to map it to measured_value_columns_map
                     requested_cell_type = single_task_data_dict.get("cell_type_requested")
                     
-                    # Find the correspoding measured data column from the map
+                    # Find the corresponding measured data column from the map
                     measured_col_for_task = measured_value_columns_map.get(requested_cell_type)
                     
                     print(f"\nProcessing task {task_index+1} (Cell Type: {predicted_cell_type}). Correlating against measured column '{measured_col_for_task}'\
@@ -286,20 +289,20 @@ def calculate_and_save_metrics(saved_predictions_path, output_dir):
                     
                     if task_correlation_dict:
                         pearson_r_value = task_correlation_dict.get('pearson_r')
+                        val_str = "NaN" if pearson_r_value is None else str(pearson_r_value)
                         
                         # Get UTC timestamp for predictor_name
                         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S.%f")
-                        # And append it to the predictor_name
-                        predictor_identifier = f"{predictor_name_base}_{task_index}_{timestamp}" if predictor_name_base else f"UnknownPredictor_{task_index}_{timestamp}"
+
                         description = f"Gosai Synthetic MPRA ({requested_cell_type})"
                         all_task_correlation_results.append({
-                            "Evaluator": EVALUATOR_NAME,
-                            "Description": description,
-                            "Predictor_name": predictor_name,
-                            "Time_stamp": timestamp,
-                            'Metric': 'pearson_r',
-                            'Value': str(pearson_r_value),
-                            'Prediction_task(s)_data': prediction_task_data_nopredictions,
+                            'evaluator_name': EVALUATOR_NAME,
+                            'description': description,
+                            'predictor_name': predictor_name,
+                            'time_stamp': timestamp,
+                            'metric': 'pearson_r',
+                            'value': val_str,
+                            'prediction_task(s)_data': prediction_task_data_nopredictions,
                         })
 
         except Exception as e:
@@ -309,17 +312,17 @@ def calculate_and_save_metrics(saved_predictions_path, output_dir):
         # print(all_task_correlation_results)
         if all_task_correlation_results:
             summary_df = pd.DataFrame(all_task_correlation_results)
-            csv_file_exists: bool = os.path.isfile(correlation_summary_filepath)
+            csv_file_exists: bool = os.path.isfile(evaluation_metrics_filepath)
             try:
-                summary_df.to_csv(correlation_summary_filepath, mode='a',
+                summary_df.to_csv(evaluation_metrics_filepath, mode='a',
                                   sep='\t', header=(not csv_file_exists), index=False)
                 if csv_file_exists:
                     print("Appended to existing summary CSV file")
                 else:
                     print("Created a new summary CSV file")
-                print(f"Saved correlation summary to {correlation_summary_filepath}!")
+                print(f"Saved correlation summary to {evaluation_metrics_filepath}!")
             except IOError as e:
-                print("\nNo correlation resuls were saved!")
+                print("\nNo correlation results were saved!")
 
     except Exception as e:
         print(f"An unexpected error occurred during evaluation calculations: {e}", file=sys.stderr)

@@ -1,0 +1,90 @@
+Bootstrap: docker
+From: python:3.13-slim
+Stage: build
+
+%files
+    # Copy evaluator scripts and utilities into the container
+    ./config.py /gosai_2024_synthetic_evaluator/config.py
+    ./data_loader.py /gosai_2024_synthetic_evaluator/data_loader.py
+    ./evaluator_content_handler.py /gosai_2024_synthetic_evaluator/evaluator_content_handler.py 
+    ./evaluator_metrics_calculator.py /gosai_2024_synthetic_evaluator/evaluator_metrics_calculator.py
+    ./evaluator_RestAPI.py /gosai_2024_synthetic_evaluator/evaluator_RestAPI.py
+
+%environment
+    # Prevent automatic binding of host directories
+    export APPTAINER_NO_MOUNT="home,tmp,proc,sys,dev"
+    export LC_ALL=C
+    export PATH="/usr/local/bin:$PATH"
+    export PYTHONPATH="/gosai_2024_synthetic_evaluator:$PYTHONPATH"
+
+%post
+    echo "Installing system dependencies..."
+    apt-get update && \
+    apt-get install -y --no-install-recommends python3-pip bzip2 ca-certificates && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    echo "Installing Python dependencies..."
+    python -m pip install --upgrade pip
+    pip3 install --no-cache-dir numpy pandas tqdm msgpack scipy requests
+
+    #echo "Setting permissions for directories and script..."
+    echo "Setting permissions for directories and script..."
+    chmod -R 755 /gosai_2024_synthetic_evaluator
+    chmod +x /gosai_2024_synthetic_evaluator/evaluator_RestAPI.py
+
+%runscript
+    # This section defines the default run behavior of the container
+    exec python3 /gosai_2024_synthetic_evaluator/evaluator_RestAPI.py "$@"
+
+%startscript
+    exec python3 /gosai_2024_synthetic_evaluator/evaluator_RestAPI.py "$@"
+
+%labels
+    Author "Ishika Luthra and Satyam Priyadarshi"
+    game_schema_version "1.0"
+    Description "This container is the Evaluator set up for the Gosai 2024 paper MPRA data for only the Synthetic Data."
+
+%help
+    This container includes:
+    - Evaluator (client) API script for genomic sequence evaluation.
+    - Evaluator utility scripts with helper functions.
+    - Evaluation metrics script for correlation calculation.
+    - Installed Python dependencies required by the Evaluator.
+
+    **Usage**:
+    We encourage using pre-built containers for this Evaluator that is hosted on Zenodo.
+
+    Bind these directories and run the container:
+    ```bash
+    apptainer run --containall \
+      -B /path/to/gosai_2024_synthetic_evaluator/evaluator_data:/evaluator_data \
+      -B /path/to/gosai_2024_synthetic_evaluator/predictions:/predictions \
+      gosai_evaluator.sif PREDICTOR_HOST PREDICTOR_PORT /predictions
+    ```
+
+    Details:
+    - The container requests and receives predictions using HTTP protocol and requires directories to be mounted at runtime.
+    - Replace `PREDICTOR_HOST` and `PREDICTOR_PORT` with the server IP and port configuration.
+
+    API Endpoints for Predictor:
+    - `POST /predict`: Request predictions for given sequences.
+    - `GET /help`: Request HELP file from the Predictor.
+    - `GET /formats`: Request supported request/receive serialization formats from the Predictor.
+
+    Purpose:
+    - Facilitates genomic sequence evaluation by interacting with the Predictor container.
+    - Handles input/output through bound directories.
+    - Calculates model performance against measured data using Pearson correlation.
+
+    Example Command:
+    ```bash
+    apptainer run --containall \
+      -B /path/to/gosai_2024_synthetic_evaluator/evaluator_data:/evaluator_data \
+      -B /path/to/gosai_2024_synthetic_evaluator/predictions:/predictions \
+      gosai_evaluator.sif 172.16.47.244 5000 /predictions
+    ```
+
+    Arguments:
+    1. `PREDICTOR_HOST`: IP address or hostname of the Predictor server.
+    2. `PREDICTOR_PORT`: Port number the Predictor is listening on.
+    3. `/predictions`: Mounted path inside the container for storing output predictions.
