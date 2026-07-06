@@ -25,7 +25,7 @@ Additional details about the Evaluator's data and the sequence file used can be 
 
 ### Run Evaluator using Apptainer container
 
-Download the container and evaluator data from Zenodo: `<LINK>`
+Download the container and evaluator data from Zenodo: `https://zenodo.org/records/21135510`
 
 ```bash
 apptainer run --containall \
