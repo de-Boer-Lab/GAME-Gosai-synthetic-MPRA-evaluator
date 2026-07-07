@@ -5,6 +5,13 @@ It scores how well a model predicts regulatory activity (expression) across thre
 cell types — **K562**, **HepG2**, and **SK-N-SH** — by correlating the model's
 predictions against measured log2(RNA/DNA) activity.
 
+## Important Links
+
+- Main GAME Repository: [de-Boer-Lab/Genomic-API-for-Model-Evaluation](https://github.com/de-Boer-Lab/Genomic-API-for-Model-Evaluation)
+- GAME Documentation: [ReadTheDocs](https://genomic-api-for-model-evaluation-documentation.readthedocs.io)
+- Pre-built Evaluator container image and data: [Zenodo](https://zenodo.org/records/21135510)
+- List of all [GAME Modules](https://github.com/de-Boer-Lab/GAME_modules)
+
 ---
 
 ## How It Works
@@ -25,7 +32,7 @@ Additional details about the Evaluator's data and the sequence file used can be 
 
 ### Run Evaluator using Apptainer container
 
-Download the container and evaluator data from Zenodo: `https://zenodo.org/records/21135510`
+Download the container and evaluator data from Zenodo (see [Important Links](#important-links) above), then run:
 
 ```bash
 apptainer run --containall \
