@@ -8,6 +8,8 @@ values it scores against. Two files are used at runtime:
 - **`upstream_downstream_backbone.txt`** — the plasmid backbone (flanking sequences and the
   reporter coordinates) that provides biological context around each mpra probe sequence.
 
+Outside the container, `config.py` reads `41586_2024_8070_MOESM14_ESM_clean_test.txt` instead: a 200-row subset of the same file (same columns), used to run the Evaluator without the container.
+
 The sequence file was extracted from the raw Gosai et al.[*Machine-guided design of cell-type-targeting cis-regulatory elements*](https://www.nature.com/articles/s41586-024-08070-z). supplementary data.
 
 ## `41586_2024_8070_MOESM14_ESM_clean.txt`
@@ -59,7 +61,7 @@ point prediction is read out over. It is a 3-row, tab-separated table:
 |---|---|
 | `upstream` | 2,079 bp upstream (5′) plasmid arm |
 | `downstream_padded` | 1,397 bp downstream (3′) arm, including a 20 bp `N` placeholder for the barcode region |
-| `gene_coordinates` | `[2419, 3171]` — start/end of the reporter (TSS → end of GFP) within the assembled construct |
+| `gene_coordinates` | `[2419, 3171]` — start/end of the reporter (TSS → end of GFP) within the assembled construct. 0-indexed and half-open (`end` is exclusive) |
 
 Derived from the full plasmid vector sequence (3,676 bp). In that vector the
 variable insert is marked by a long run of `N`s, so the sequence was split on that run into

@@ -59,7 +59,7 @@ Stage: build
     apptainer run --containall \
       -B /path/to/gosai_2024_synthetic_evaluator/evaluator_data:/evaluator_data \
       -B /path/to/gosai_2024_synthetic_evaluator/predictions:/predictions \
-      gosai_evaluator.sif PREDICTOR_HOST PREDICTOR_PORT /predictions
+      gosai_synthetic_evaluator.sif PREDICTOR_HOST PREDICTOR_PORT /predictions
     ```
 
     Details:
@@ -81,7 +81,7 @@ Stage: build
     apptainer run --containall \
       -B /path/to/gosai_2024_synthetic_evaluator/evaluator_data:/evaluator_data \
       -B /path/to/gosai_2024_synthetic_evaluator/predictions:/predictions \
-      gosai_evaluator.sif 172.16.47.244 5000 /predictions
+      gosai_synthetic_evaluator.sif 172.16.47.244 5000 /predictions
     ```
 
     Arguments:

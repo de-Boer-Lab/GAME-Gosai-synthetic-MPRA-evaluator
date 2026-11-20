@@ -23,7 +23,7 @@ The evaluator:
 3. Creates JSON to send to Predictor
 4. Negotiates serialization format (JSON or MsgPack) with the Predictor
 5. POSTs all sequences to the Predictor's `/predict` endpoint in a single request, across three seperate prediction tasks (K562, HepG2, SK-N-SH)
-6. Computes Pearson *r* between predicted expression (log scale) and measured log₂(RNA/DNA) values for each cell type
+6. Checks that each task's predictions are for exactly the sequences that were sent (otherwise the metric is recorded as `NaN`), then computes Pearson *r* between predicted expression (log scale) and measured log₂(RNA/DNA) values for each cell type
 7. Saves raw predictions and a final evaluation summary CSV
 
 Additional details about the Evaluator's data and the sequence file used can be found in the evaluator_data folder.
@@ -38,7 +38,7 @@ Download the container and evaluator data from Zenodo (see [Important Links](#im
 apptainer run --containall \
   -B /absolute/path/to/evaluator_data:/evaluator_data \
   -B /absolute/path/to/predictions:/predictions \
-  gosai_evaluator.sif <predictor_ip> <predictor_port> /predictions
+  gosai_synthetic_evaluator.sif <predictor_ip> <predictor_port> /predictions
 ```
 
 ---
@@ -55,7 +55,7 @@ apptainer run --containall \
 
 ## Request Structure
 
-A single POST request is sent containing all ~51,000 synthetic sequences. The backbone upstream/downstream flanking sequences and the promoter coordinates (used as `prediction_ranges`) are read from `upstream_downstream_backbone.txt`.
+A single POST request is sent containing all ~51,000 synthetic sequences. The backbone upstream/downstream flanking sequences and the reporter coordinates (used as `prediction_ranges`) are read from `upstream_downstream_backbone.txt`.
 
 Each request payload follows this structure:
 
@@ -98,7 +98,9 @@ Each request payload follows this structure:
 }
 ```
 
-**Sequence structure:** Each sequence is 200nt long and corresponds to a synthetic MPRA design. The `prediction_ranges` coordinates correspond to the promoter region within the backbone, as defined in `upstream_downstream_backbone.txt`, and are shared across all sequences.
+**Sequence structure:** Each sequence is 200nt long and corresponds to a synthetic MPRA design. The `prediction_ranges` coordinates correspond to the reporter (from the TSS to the end of GFP) within the full construct (see *Prediction ranges* below), as defined in `upstream_downstream_backbone.txt`, and are shared across all sequences.
+
+**Prediction ranges:** Ranges are 0-indexed and half-open (`start` is inclusive and `end` is exclusive), like Python slicing. They are positions in the full construct, i.e. `upstream + sequence + downstream_padded` (the 200 nt sequence with the upstream and downstream backbone added around it). The shared range `[2419, 3171]` starts at the transcription start site (the `AATCCG` TSS motif) and covers the 752 bp reporter through the end of GFP.
 
 ---
 
@@ -153,6 +155,20 @@ Gosai_2024_synthetic/
   per cell type. A task with zero variance in either vector is reported as `r = 0`.
 - **Output:** a tab-separated `evaluation_summary_<evaluator_name>.csv` written to the
   mounted predictions directory, with one row per task per metric.
+
+### Scoring rules
+
+**Complete predictions are required.** The Evaluator sends a fixed set of sequences, and the Predictor (or the Predictor Distributor) must return a prediction for every one of them. The Evaluator never chooses which sequences to score: a task is scored only if its `predictions` hold exactly the sequence IDs that were sent, with no missing, extra or different IDs. This stops a Predictor from predicting only the sequences it does well on, or from adding made-up IDs to keep the count right, to get a better score.
+
+Every run that reaches the metric calculation writes a row for each of the three metrics to the summary CSV: a Pearson *r* for each cell type (K562, HepG2, SK-N-SH). The `value` column holds:
+
+| Value | When |
+|---|---|
+| a number | The metric was calculated. |
+| `0.0` | The Predictor returned valid predictions, but the result is zero or undefined because the data do not vary: constant (zero-variance) predictions. |
+| `"NaN"` | The metric could not be calculated because of a protocol failure: the Predictor returned an error for the task (e.g. `prediction_request_failed` or `upstream_dependency_failed`), the task is missing from the response, its predictions are not for exactly the sequences that were sent, a prediction value is not a finite number (e.g. `null`), its scale is not the requested `log`, none of its sequences has a measured value, or the Predictor returned an HTTP error. |
+
+A failed task does not affect the others: the tasks that did succeed are still scored. A sequence that was sent and predicted but has no measured value for a cell type is dropped, and the rest are scored.
 
 ---
 
