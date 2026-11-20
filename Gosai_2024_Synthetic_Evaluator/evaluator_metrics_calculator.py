@@ -117,6 +117,8 @@ def _calculate_task_correlation(
         predictions_df['Predicted_Value'] = predictions_df['Predicted_Value'].apply(
             lambda x: x[0] if isinstance(x, list) and len(x) > 0 else x
             )
+        # A prediction that is not a finite number counts as a missing prediction (caught by the NaN check below)
+        predictions_df['Predicted_Value'] = pd.to_numeric(predictions_df['Predicted_Value'], errors='coerce').replace([np.inf, -np.inf], np.nan)
 
         #check here is there is NA is any of the prediction values
         na_rows = predictions_df[predictions_df['Predicted_Value'].isna()]
