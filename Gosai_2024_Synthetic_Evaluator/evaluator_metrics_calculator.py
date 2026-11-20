@@ -267,11 +267,9 @@ def calculate_and_save_metrics(saved_predictions_path, output_dir, sequence_ids=
             if (
                 "prediction_tasks" not in predictions_file_content or
                 # Also flag cases in case prediction_tasks key is returned empty
-                not predictions_file_content["prediction_tasks"] or
-                # And flag if any 'predictions' keys are empty
-                any(not key.get("predictions") for key in predictions_file_content["prediction_tasks"])
+                not predictions_file_content["prediction_tasks"]
             ):
-                print("WARNING: 'prediction_tasks' key missing, empty, or one of the tasks has empty predictions.")
+                print("WARNING: 'prediction_tasks' key missing or empty.")
             else:
                 # Loop through each prediction_task from Predictor
                 # Calculate the correlation for each task separately
@@ -321,6 +319,24 @@ def calculate_and_save_metrics(saved_predictions_path, output_dir, sequence_ids=
 
         except Exception as e:
             print(f"An error occurred during correlation calculation: {e}")
+
+        # Every metric gets a row: record "NaN" for any that could not be calculated (a task the Predictor could not
+        # perform, predictions that are not for exactly the sequences sent, or an HTTP error response)
+        task_metadata = {t.get("cell_type_requested"): [{k: v for k, v in t.items() if k != "predictions"}]
+                         for t in predictions_file_content.get("prediction_tasks") or [] if isinstance(t, dict)}
+        calculated = {row["description"] for row in all_task_correlation_results}
+        for cell_type in measured_value_columns_map:
+            description = f"Gosai Synthetic MPRA ({cell_type})"
+            if description not in calculated:
+                all_task_correlation_results.append({
+                    'evaluator_name': EVALUATOR_NAME,
+                    'description': description,
+                    'predictor_name': predictor_name,
+                    'time_stamp': datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S.%f"),
+                    'metric': 'pearson_r',
+                    'value': "NaN",
+                    'prediction_task(s)_data': task_metadata.get(cell_type, [])
+                })
 
        # Once all the data is received, save them all into a summary CSV
         # print(all_task_correlation_results)
