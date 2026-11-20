@@ -26,7 +26,8 @@ def _calculate_task_correlation(
     measured_value_column: str,
     seq_id_column: str,
     chromosome_column: str = None,
-    chromosomes_to_filter: list = None
+    chromosomes_to_filter: list = None,
+    sequence_ids: set = None
     ):
     
     """
@@ -41,6 +42,7 @@ def _calculate_task_correlation(
         id_column (str): Common identifier for sequences column (IDs or sequences).
         chromosome_column (str, optional): Chromosome column name in measured_df. Defaults to 'None'.
         chromosomes_to_filter (list, optional): List of chromosomes for filtering. Defaults to 'None'. 
+        sequence_ids (set, optional): IDs of the sequences sent to the Predictor. If given, the task is only scored if its predictions are for exactly these sequences.
 
     Returns:
         correlation_details (dict): Dictionary containing 'pearson_r' (float or None) and task metadata ("task_name", "task_type", "cell_type_actual")
@@ -77,6 +79,17 @@ def _calculate_task_correlation(
         }
         return correlation_details
     
+    # Predictions are not for exactly the sequences that were sent (missing, extra or different sequence IDs)
+    if sequence_ids is not None and predictions_dict.keys() != sequence_ids:
+        print(f"Predictions of task '{task_name}' are not for exactly the {len(sequence_ids)} sequences that were sent: Skipping evaluation calculation")
+        correlation_details = {
+        'task_name': task_name, 
+        'task_type': task_type_actual,
+        'cell_type_actual': cell_type_actual,
+        'pearson_r': pearson_r_value
+        }
+        return correlation_details
+
     # --- Data Validation and processing ---
     print("--- Validating data ---")
     if not isinstance(predictions_dict, dict):
@@ -198,7 +211,7 @@ def _calculate_task_correlation(
     }
     return correlation_details
 
-def calculate_and_save_metrics(saved_predictions_path, output_dir):
+def calculate_and_save_metrics(saved_predictions_path, output_dir, sequence_ids=None):
     """
     Calculates custom evaluation metrics and saves them to CSV files.
     This is the primary function to customize for a new evaluator.
@@ -284,7 +297,8 @@ def calculate_and_save_metrics(saved_predictions_path, output_dir):
                         measured_df=measured_df,
                         single_task_data=single_task_data_dict,
                         measured_value_column=measured_col_for_task,
-                        seq_id_column=seq_column # chromosome_column and chromosomes_to_filter_list can be added as arguments
+                        seq_id_column=seq_column, # chromosome_column and chromosomes_to_filter_list can be added as arguments
+                        sequence_ids=sequence_ids
                     )
                     
                     if task_correlation_dict:
@@ -307,7 +321,7 @@ def calculate_and_save_metrics(saved_predictions_path, output_dir):
 
         except Exception as e:
             print(f"An error occurred during correlation calculation: {e}")
-            
+
        # Once all the data is received, save them all into a summary CSV
         # print(all_task_correlation_results)
         if all_task_correlation_results:
