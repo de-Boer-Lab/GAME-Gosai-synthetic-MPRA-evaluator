@@ -59,7 +59,7 @@ point prediction is read out over. It is a 3-row, tab-separated table:
 |---|---|
 | `upstream` | 2,079 bp upstream (5′) plasmid arm |
 | `downstream_padded` | 1,397 bp downstream (3′) arm, including a 20 bp `N` placeholder for the barcode region |
-| `gene_coordinates` | `[2419, 3171]` — start/end of the reporter (TSS → end of GFP) within the assembled construct |
+| `gene_coordinates` | `[2419, 3171]` — start/end of the reporter (TSS → end of GFP) within the assembled construct. 0-indexed and half-open (`end` is exclusive) |
 
 Derived from the full plasmid vector sequence (3,676 bp). In that vector the
 variable insert is marked by a long run of `N`s, so the sequence was split on that run into
